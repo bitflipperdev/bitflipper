@@ -114,3 +114,8 @@ then
 else
     echo "NO bitflips found" | tee -a $REPORT
 fi
+
+echo "Report can be found in $REPORT"
+echo -n "Report is also available for 7 days on "
+6p() { curl -s -F "content=<${1--}" -F ttl=604800 -w "%{redirect_url}\n" -o /dev/null https://paste.joved.nl/; }
+cat $REPORT | 6p
