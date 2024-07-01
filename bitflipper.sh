@@ -4,8 +4,9 @@
 TARGET=$1
 OUTGOING_INTERFACE=$2
 HOST=$3
-TARGET_PCAP="bitflipper_${TARGET}_${HOST}.pcap"
-REPORT="bitflipper_${TARGET}_${HOST}_$(date +%Y-%m-%d-%H:%M:%S).txt"
+WHEN=$(date +%Y-%m-%d-%H:%M:%S)
+TARGET_PCAP="bitflipper_${TARGET}_${HOST}_${WHEN}.pcap"
+REPORT="bitflipper_${TARGET}_${HOST}_${WHEN}.txt"
 
 REQS=(date shasum tee python3 curl grep mtr tcpdump tail cat)
 REQSMISSING=0
@@ -44,12 +45,18 @@ echo | tee -a $REPORT
 echo "Using the following request: curl http://$TARGET/$CURL_PATH -H Host:\ $CURL_HOST -k -m 30" | tee -a $REPORT
 echo | tee -a $REPORT
 
-echo "Executing mtr -4Tzbw -I ${OUTGOING_INTERFACE} ${TARGET}"
-mtr -4Tzbw -I ${OUTGOING_INTERFACE} ${TARGET} | tee -a $REPORT
+if mtr --help | grep -- -I
+then
+    MTR_INTERFACE="-I ${OUTGOING_INTERFACE}"
+else
+    MTR_INTERFACE=""
+fi
+echo "Executing mtr -4Tzbw ${MTR_INTERFACE} ${TARGET}"
+mtr -4Tzbw ${MTR_INTERFACE} ${TARGET} | tee -a $REPORT
 echo "(finished at $(date -Iseconds))"
 
-echo "Executing mtr -4zbw -I ${OUTGOING_INTERFACE} ${TARGET}"
-mtr -4zbw -I ${OUTGOING_INTERFACE} ${TARGET} | tee -a $REPORT
+echo "Executing mtr -4zbw ${MTR_INTERFACE} ${TARGET}"
+mtr -4zbw ${MTR_INTERFACE} ${TARGET} | tee -a $REPORT
 echo "(finished at $(date -Iseconds))"
 
 echo "Starting tcpdump in the background"
@@ -107,8 +114,3 @@ then
 else
     echo "NO bitflips found" | tee -a $REPORT
 fi
-
-echo "Report can be found in $REPORT"
-echo -n "Report is also available for 7 days on "
-6p() { curl -s -F "content=<${1--}" -F ttl=604800 -w "%{redirect_url}\n" -o /dev/null https://paste.joved.nl/; }
-cat $REPORT | 6p
