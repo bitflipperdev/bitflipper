@@ -78,7 +78,7 @@ do
 done
 
 echo $TCPDUMP
-if [ "$RUNNING" == "1"]
+if [ "$RUNNING" == "1" ]
 then
     kill -TERM $TCPDUMP
     kill -TERM $TCPDUMP_TAIL
