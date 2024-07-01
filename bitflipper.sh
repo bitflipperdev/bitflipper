@@ -7,6 +7,16 @@ HOST=$3
 TARGET_PCAP="bitflipper_${TARGET}_${HOST}.pcap"
 REPORT="bitflipper_${TARGET}_${HOST}_$(date +%Y-%m-%d-%H:%M:%S).txt"
 
+REQS=(date shasum tee python3 curl grep mtr tcpdump tail cat)
+REQSMISSING=0
+for cmd in ${REQS[@]}; do
+    if [ ! -x "$(which ${cmd})" ]; then
+        echo "Prerequisite ${cmd} not found and/or not executable"
+        REQSMISSING=1
+    fi
+done;
+[ ${REQSMISSING} == 1 ] && exit 1;
+
 echo "Running $0 $*" | tee -a $REPORT
 echo "Script $(shasum $0)" | tee -a $REPORT
 
