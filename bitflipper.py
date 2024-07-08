@@ -60,6 +60,7 @@ class HTTPProtocol(asyncio.Protocol):
         logging.debug(f"{self.index=} connection closed")
         self.on_con_lost.set_result(True)
 
+PORT_OFFSET=40000
 
 async def run(loop, index):
     cur_rate = HTTPProtocol.SENT_REQUESTS / (time.time() - START_TIME) 
@@ -72,9 +73,17 @@ async def run(loop, index):
     on_con_lost = loop.create_future()
     message = 'A' * L
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(('0.0.0.0', 40000 + (index % 20000)))
+    global PORT_OFFSET
+
+    while True:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(('0.0.0.0', PORT_OFFSET + (index % 20000)))
+            break
+        except OSError:
+            PORT_OFFSET = PORT_OFFSET + 1
+
     sock.connect((IP, PORT))
 
     transport, protocol = await loop.create_connection(
