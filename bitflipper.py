@@ -75,7 +75,7 @@ async def run(loop, index):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('0.0.0.0', 40000 + (index % 20000)))
-    sock.connect((IP, 80))
+    sock.connect((IP, PORT))
 
     transport, protocol = await loop.create_connection(
         lambda: HTTPProtocol(message, on_con_lost, index),
@@ -99,9 +99,9 @@ async def main(loop):
 
 def verify_http():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((IP, 80))
+    sock.connect((IP, PORT))
     message = 'A' * L
-    request = f"GET /{message} HTTP/1.1\r\nHost: {HOSTNAME}\r\n\r\n".encode()
+    request = f"GET /{message} HTTP/1.1\r\nHost: {HOSTNAME}\r\nConnection: keep-alive\r\n\r\n".encode()
     logging.debug(f"verify_http sending {request=}")
     sock.send(request)
     response = b""
@@ -124,6 +124,7 @@ if __name__ == "__main__":
     parser.add_argument('-N', '--num-requests', default=10, type=int, help="Number of HTTP requests to send per TCP connection (1-1000)")
     parser.add_argument('-L', '--length', default=3500, type=int, help="Number of A's to use in the request")
     parser.add_argument('-R', '--rate', default=10, type=float, help="Number of HTTP requests per second")
+    parser.add_argument('-p', '--port', default=80, type=int, help="TCP Port")
     parser.add_argument('-v', '--verbose', help="enable debugging", action='store_true', required=False, default=False)
     parser.add_argument('-i', '--ignore-errors', help="do not stop when a connection error occurs (most likely due to bitflips)", action='store_true', required=False, default=False)
     parser.add_argument('-q', '--quiet', help="do not show live tshark bitflips", action='store_true', required=False, default=False)
@@ -138,6 +139,7 @@ if __name__ == "__main__":
     L = args.length
     R = args.rate
     IP = args.ip
+    PORT = args.port
     QUIET = args.quiet
     IGNORE_ERRORS = args.ignore_errors
     HOSTNAME = args.hostname
@@ -162,12 +164,11 @@ if __name__ == "__main__":
     verify_http()
 
 
-    process_pcap = subprocess.Popen(["tcpdump", "-i", OUTGOING_INTERFACE, "-s", "0", "-w", PCAP, "-U", f"host {IP} and port 80"])
+    process_pcap = subprocess.Popen(["tcpdump", "-i", OUTGOING_INTERFACE, "-s", "0", "-w", PCAP, "-U", f"host {IP} and port {PORT}"])
     time.sleep(1)
 
     if not QUIET:
         print("starting tshark")
-        #tshark_pcap = subprocess.Popen(f"tail -c +1 -f {PCAP} | tshark -n -x -r - -Y 'tcp.payload contains \"@\"' -x | grep '@' | grep -v '^00'", shell=True, start_new_session=True)
         tshark_pcap = subprocess.Popen(f"tail -c +1 -f {PCAP} | tshark -n -x -r - -Y 'tcp.payload contains \"@\"' -x", shell=True, start_new_session=True)
         time.sleep(1)
 
@@ -200,16 +201,16 @@ if __name__ == "__main__":
     RX_BF_F=0
     RX_SP_BF=0
     TX_TOTAL=0
-    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.src == {IP} and tcp.srcport == 80 and tcp.payload contains \"A\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.dstport", "-e", "frame"], capture_output=True, encoding="utf8")
+    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.src == {IP} and tcp.srcport == {PORT} and tcp.payload contains \"A\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.dstport", "-e", "frame"], capture_output=True, encoding="utf8")
     for line in p.stdout.splitlines():
         RX_TOTAL = RX_TOTAL + 1
-    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.src == {IP} and tcp.srcport == 80 and tcp.payload contains \"@\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.dstport", "-e", "frame"], capture_output=True, encoding="utf8")
+    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.src == {IP} and tcp.srcport == {PORT} and tcp.payload contains \"@\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.dstport", "-e", "frame"], capture_output=True, encoding="utf8")
     for line in p.stdout.splitlines():
         stream, port, _ = line.split("\t", 2)
         SP_BF.add(port)
         RX_BF = RX_BF + 1
     SP_BF = len(SP_BF)
-    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.dst == {IP} and tcp.dstport == 80 and tcp.payload contains \"A\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.srcport", "-e", "frame"], capture_output=True, encoding="utf8")
+    p = subprocess.run(["tshark", "-n", "-r", PCAP, "-Y", f"ip.dst == {IP} and tcp.dstport == {PORT} and tcp.payload contains \"A\"", "-T", "fields", "-e", "tcp.stream", "-e", "tcp.srcport", "-e", "frame"], capture_output=True, encoding="utf8")
     for line in p.stdout.splitlines():
         stream, port, _ = line.split("\t", 2)
         SP_TOTAL.add(port)
