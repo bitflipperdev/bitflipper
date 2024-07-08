@@ -28,6 +28,7 @@ class HTTPProtocol(asyncio.Protocol):
         self.index = index
 
     def connection_made(self, transport):
+        HTTPProtocol.SENT_REQUESTS = HTTPProtocol.SENT_REQUESTS + 1
         transport.write(self.message.encode())
         self.transport = transport
         logging.debug(f"{self.index=} Data sent: {self.message!r}")
@@ -49,7 +50,10 @@ class HTTPProtocol(asyncio.Protocol):
                 self.transport.close()
                 return
 
-            await asyncio.sleep(W)
+            while (time.time() - START_TIME) * R < HTTPProtocol.SENT_REQUESTS:
+                await asyncio.sleep(0.01)
+
+            HTTPProtocol.SENT_REQUESTS = HTTPProtocol.SENT_REQUESTS + 1
             self.transport.write(self.message.encode())
 
     def connection_lost(self, exc):
@@ -58,10 +62,13 @@ class HTTPProtocol(asyncio.Protocol):
 
 
 async def run(loop, index):
+    cur_rate = HTTPProtocol.SENT_REQUESTS / (time.time() - START_TIME) 
+
     if index % 10 == 0:
-        logging.info(f"Starting connection {index}")
+        logging.info(f"Starting connection {index} ({cur_rate:.2f} requests per second)")
     else:
-        logging.debug(f"Starting connection {index}")
+        logging.debug(f"Starting connection {index} ({cur_rate:.2f} requests per second)")
+
     on_con_lost = loop.create_future()
     message = 'A' * L
 
@@ -74,7 +81,7 @@ async def run(loop, index):
         lambda: HTTPProtocol(message, on_con_lost, index),
         sock=sock)
     try:
-        await asyncio.wait_for(on_con_lost, timeout=(N*W + 5))
+        await asyncio.wait_for(on_con_lost, timeout=((N / R) + 5))
     finally:
         transport.close()
 
@@ -112,11 +119,11 @@ if __name__ == "__main__":
                         prog='Bitflipper',
                         description='Check your connection for bitflips in packets')
 
-    parser.add_argument('-C', '--connections', default=400, type=int, help="Total number of TCP connections to use, with unique source ports (1-10000)")     
+    parser.add_argument('-C', '--connections', default=1000, type=int, help="Total number of TCP connections to use, with unique source ports (1-10000)")     
     parser.add_argument('-P', '--parallel', default=5, type=int, help="Number of parallel TCP connections to use, this does not effect the total number of TCP connections to use (1-25)")
-    parser.add_argument('-N', '--num-requests', default=150, type=int, help="Number of HTTP requests to send per TCP connection (1-1000)")
+    parser.add_argument('-N', '--num-requests', default=10, type=int, help="Number of HTTP requests to send per TCP connection (1-1000)")
     parser.add_argument('-L', '--length', default=3500, type=int, help="Number of A's to use in the request")
-    parser.add_argument('-W', '--wait', default=0.03, type=float, help="Seconds to sleep after each HTTP request (float)")
+    parser.add_argument('-R', '--rate', default=10, type=float, help="Number of HTTP requests per second")
     parser.add_argument('-v', '--verbose', help="enable debugging", action='store_true', required=False, default=False)
     parser.add_argument('-i', '--ignore-errors', help="do not stop when a connection error occurs (most likely due to bitflips)", action='store_true', required=False, default=False)
     parser.add_argument('-q', '--quiet', help="do not show live tshark bitflips", action='store_true', required=False, default=False)
@@ -129,7 +136,7 @@ if __name__ == "__main__":
     P = args.parallel
     N = args.num_requests
     L = args.length
-    W = args.wait
+    R = args.rate
     IP = args.ip
     QUIET = args.quiet
     IGNORE_ERRORS = args.ignore_errors
@@ -150,7 +157,7 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-    logging.info(f"Testing with {C=} {P=} {N=} {L=} {W=} {IP=} {HOSTNAME=} {PCAP=} {REPORT=} {OUTGOING_INTERFACE=} {IGNORE_ERRORS=} {QUIET=}")
+    logging.info(f"Testing with {C=} {P=} {N=} {L=} {R=} {IP=} {HOSTNAME=} {PCAP=} {REPORT=} {OUTGOING_INTERFACE=} {IGNORE_ERRORS=} {QUIET=}")
 
     verify_http()
 
@@ -159,11 +166,18 @@ if __name__ == "__main__":
     time.sleep(1)
 
     if not QUIET:
-        tshark_pcap = subprocess.Popen(f"tail -c +1 -f {PCAP} | tshark -n -x -r - -Y 'tcp.payload contains \"@\"' -x | grep '@' | grep -v '^00'", shell=True, start_new_session=True)
+        print("starting tshark")
+        #tshark_pcap = subprocess.Popen(f"tail -c +1 -f {PCAP} | tshark -n -x -r - -Y 'tcp.payload contains \"@\"' -x | grep '@' | grep -v '^00'", shell=True, start_new_session=True)
+        tshark_pcap = subprocess.Popen(f"tail -c +1 -f {PCAP} | tshark -n -x -r - -Y 'tcp.payload contains \"@\"' -x", shell=True, start_new_session=True)
         time.sleep(1)
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(loop))
+    HTTPProtocol.SENT_REQUESTS=0
+    START_TIME=time.time()
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main(loop))
+    except KeyboardInterrupt:
+        print("Interrupted!")
 
     time.sleep(1)
     process_pcap.terminate()
@@ -213,4 +227,3 @@ Bitflip packets: {RX_BF} total, {((RX_BF/(RX_TOTAL+RX_BF))*100):.3f} % of all pa
 Total connections: {SP_TOTAL}
 Bitflip connections: {SP_BF} total, {((SP_BF / SP_TOTAL) * 100):.3f} % of all connections
 """)
-
