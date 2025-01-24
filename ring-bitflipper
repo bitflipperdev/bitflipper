@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -exo pipefail
+
+CLIENT="$1"
+SERVER="$2"
+
+if [ -z "$SERVER" ]
+then
+    echo "Usage: $0 <client ring node> <server ring node> [additional bitflipper.py args]"
+    exit 1
+fi
+
+TOKEN=$(openssl rand -hex 12)
+
+echo "Downloading latest bitflipper to $CLIENT"
+ssh $CLIENT "mkdir -p ring-bitflipper; curl -o ring-bitflipper/bitflipper.py https://raw.githubusercontent.com/bitflipperdev/bitflipper/refs/heads/tool/bitflipper.py"
+
+echo "Downloading latest bitflipper to $SERVER"
+ssh $SERVER "mkdir -p ring-bitflipper; curl -o ring-bitflipper/bitflipper.py https://raw.githubusercontent.com/bitflipperdev/bitflipper/refs/heads/tool/bitflipper.py"
+
+echo "Starting bitflipper server on $SERVER"
+ssh $SERVER "python3 ring-bitflipper/bitflipper.py -s 0.0.0.0 $TOKEN" &
+PID_SERVER=$!
+
+echo "Starting bitflipper client on $CLIENT"
+ssh $CLIENT "python3 ring-bitflipper/bitflipper.py ${@:3} $SERVER $TOKEN"
+
+echo "Stopping server on $SERVER"
+kill -TERM $PID_SERVER
+# TODO: fix this ugly problem where the server keeps running
+ssh $SERVER "ps xwww | grep 'python3 ring-bitflipper/bitflipper.py' | grep -v grep | sed -e 's/ .*//' | xargs kill"

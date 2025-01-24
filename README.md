@@ -98,3 +98,10 @@ Packets RTT:      min:   3.67ms
                   max:   129.9ms
                   stdev: 1.078ms
 ```
+
+## NLNOG Ring Usage
+
+```
+./ring-bitflipper <ring node for client> <ring node for server> [optional arguments to bitflipper.py]
+```
+
